@@ -45,8 +45,9 @@ def concat_padded_sequences(seq1, mask1, seq2, mask2, return_index: bool = False
     assert seq1_length == mask1.size(1)
     assert seq2_length == mask2.size(1)
 
-    torch._assert_async(is_right_padded(mask1))
-    torch._assert_async(is_right_padded(mask2))
+    # torch._assert_async is not implemented on MPS; use .item() fallback
+    assert is_right_padded(mask1).item(), "mask1 is not right-padded"
+    assert is_right_padded(mask2).item(), "mask2 is not right-padded"
 
     actual_seq1_lengths = (~mask1).sum(dim=-1)
     actual_seq2_lengths = (~mask2).sum(dim=-1)
@@ -602,9 +603,15 @@ class SequenceGeometryEncoder(nn.Module):
             grid = points.transpose(0, 1).unsqueeze(2)
             # re normalize to [-1, 1]
             grid = (grid * 2) - 1
-            sampled = torch.nn.functional.grid_sample(
-                img_feats, grid, align_corners=False
-            )
+            # grid_sample has a bug on MPS; fall back to CPU for this op
+            if img_feats.device.type == "mps":
+                sampled = torch.nn.functional.grid_sample(
+                    img_feats.cpu(), grid.cpu(), align_corners=False
+                ).to(img_feats.device)
+            else:
+                sampled = torch.nn.functional.grid_sample(
+                    img_feats, grid, align_corners=False
+                )
             assert list(sampled.shape) == [bs, self.d_model, n_points, 1]
             sampled = sampled.squeeze(-1).permute(2, 0, 1)
             proj = self.points_pool_project(sampled)
