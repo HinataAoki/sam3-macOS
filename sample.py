@@ -238,9 +238,9 @@ def main():
             alpha=0.5,
         )
 
-        out_path = os.path.join(output_folder, f"{stem}_{prompt}.png")
-        cv2.imwrite(out_path, overlay_image)
-        print(f"Saved: {out_path}")
+    out_path = os.path.join(output_folder, f"{stem}_{'_'.join(prompts)}.png")
+    cv2.imwrite(out_path, overlay_image)
+    print(f"Saved: {out_path}")
 
     return None
 
