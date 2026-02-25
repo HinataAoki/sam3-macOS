@@ -1,3 +1,5 @@
+import os
+import argparse
 import cv2
 import numpy as np
 import torch
@@ -5,6 +7,15 @@ from PIL import Image
 
 from sam3.model.sam3_image_processor import Sam3Processor
 from sam3.model_builder import build_sam3_image_model
+
+
+def get_args() -> argparse.Namespace:
+    """Get arguments from the command line."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--image_path", type=str, required=True)
+    parser.add_argument("-p", "--prompts", type=str, nargs="+", required=True)
+    parser.add_argument("-o", "--output_folder", type=str, default="results")
+    return parser.parse_args()
 
 
 def opencv_visualization(
@@ -168,49 +179,71 @@ def apply_mask_nms(
     selected_indices = order[keep_mask].to(masks.device)
     return masks[selected_indices], boxes[selected_indices], scores[selected_indices]
 
-# === EDIT ME ===
-prompts = ["dog", "cat"]
-colors = [(255, 0, 0), (0, 255, 0)]
-image_path = "dog_and_cat.png"
-# === EDIT ME ===
 
-# Load the model
-model = build_sam3_image_model()
-processor = Sam3Processor(model, confidence_threshold=0.3)
-# Load an image
-image = Image.open(image_path).convert("RGB")
+def _generate_colors(n: int) -> list[tuple[int, int, int]]:
+    """Generate n visually distinct BGR colors using HSV color space."""
+    import colorsys
+    colors = []
+    for i in range(n):
+        h = i / max(n, 1)
+        r, g, b = colorsys.hsv_to_rgb(h, 0.9, 0.95)
+        colors.append((int(b * 255), int(g * 255), int(r * 255)))
+    return colors
 
-inference_state = processor.set_image(image)
 
-overlay_image = image.copy()
-overlay_image = np.array(overlay_image)
-overlay_image = cv2.cvtColor(overlay_image, cv2.COLOR_RGB2BGR)
+def main():
+    args = get_args()
+    image_path = args.image_path
+    prompts = args.prompts
+    output_folder = args.output_folder
 
-for prompt, color in zip(prompts, colors):
-    output = processor.set_text_prompt(state=inference_state, prompt=prompt)
-    masks, boxes, scores = output["masks"], output["boxes"], output["scores"]
+    os.makedirs(output_folder, exist_ok=True)
+    colors = _generate_colors(len(prompts))
 
-    masks, boxes, scores = apply_mask_nms(
-        masks=masks,
-        boxes=boxes,
-        scores=scores,
-        score_threshold=0.3,
-        mask_iou_threshold=0.1,
-        box_iou_threshold=0.1,
-    )
+    # Load the model
+    model = build_sam3_image_model()
+    processor = Sam3Processor(model, confidence_threshold=0.3)
+    # Load an image
+    image = Image.open(image_path).convert("RGB")
 
-    print("Image Masks shape:", masks.shape)
-    print("Image Boxes shape:", boxes.shape)
-    print("Image Scores shape:", scores.shape)
+    inference_state = processor.set_image(image)
 
-    overlay_image = opencv_visualization(
-        image=overlay_image,
-        masks=masks,
-        boxes=boxes,
-        scores=scores,
-        score_threshold=0.3,
-        color=color,
-        alpha=0.5,
-    )
+    overlay_image = image.copy()
+    overlay_image = np.array(overlay_image)
+    overlay_image = cv2.cvtColor(overlay_image, cv2.COLOR_RGB2BGR)
 
-cv2.imwrite("visualization.png", overlay_image)
+    stem, _ = os.path.splitext(os.path.basename(image_path))
+    for prompt, color in zip(prompts, colors):
+        output = processor.set_text_prompt(state=inference_state, prompt=prompt)
+        masks, boxes, scores = output["masks"], output["boxes"], output["scores"]
+
+        masks, boxes, scores = apply_mask_nms(
+            masks=masks,
+            boxes=boxes,
+            scores=scores,
+            score_threshold=0.3,
+            mask_iou_threshold=0.1,
+            box_iou_threshold=0.1,
+        )
+
+        print(f"[{prompt}] masks={masks.shape}, boxes={boxes.shape}, scores={scores.shape}")
+
+        overlay_image = opencv_visualization(
+            image=overlay_image,
+            masks=masks,
+            boxes=boxes,
+            scores=scores,
+            score_threshold=0.3,
+            color=color,
+            alpha=0.5,
+        )
+
+        out_path = os.path.join(output_folder, f"{stem}_{prompt}.png")
+        cv2.imwrite(out_path, overlay_image)
+        print(f"Saved: {out_path}")
+
+    return None
+
+
+if __name__ == "__main__":
+    main()
