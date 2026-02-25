@@ -7,6 +7,11 @@ from collections import defaultdict
 
 import numpy as np
 import torch
+
+# Device-aware autocast configuration (evaluated at import time)
+_DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+_AUTOCAST_DTYPE = torch.bfloat16 if _DEVICE_TYPE == "cuda" else torch.float16
+_AUTOCAST_ENABLED = _DEVICE_TYPE in ("cuda", "mps")
 import torch.distributed as dist
 import torch.nn.functional as F
 from sam3 import perflib
@@ -796,7 +801,7 @@ class Sam3VideoInference(Sam3VideoBase):
         return inference_state
 
     @torch.inference_mode()
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    @torch.autocast(device_type=_DEVICE_TYPE, dtype=_AUTOCAST_DTYPE, enabled=_AUTOCAST_ENABLED)
     def warm_up_compilation(self):
         """
         Warm up the model by running a dummy inference to compile the model. This is
@@ -904,7 +909,7 @@ class Sam3VideoInference(Sam3VideoBase):
         )
         return frame_idx, self._postprocess_output(inference_state, out)
 
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    @torch.autocast(device_type=_DEVICE_TYPE, dtype=_AUTOCAST_DTYPE, enabled=_AUTOCAST_ENABLED)
     def forward(self, input: BatchedDatapoint, is_inference: bool = False):
         """This method is only used for benchmark eval (not used in the demo)."""
         # set the model to single GPU for benchmark evaluation (to be compatible with trainer)

@@ -16,7 +16,7 @@ class Sam3Processor:
 
     def __init__(self, model, resolution=1008, device=None, confidence_threshold=0.5):
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         self.model = model
         self.resolution = resolution
         self.device = device
@@ -54,7 +54,7 @@ class Sam3Processor:
             raise ValueError("Image must be a PIL image or a tensor")
 
         image = v2.functional.to_image(image).to(self.device)
-        image = self.transform(image).unsqueeze(0)
+        image = self.transform(image.cpu()).unsqueeze(0).to(self.device)
 
         state["original_height"] = height
         state["original_width"] = width
